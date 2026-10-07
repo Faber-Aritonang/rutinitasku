@@ -1,5 +1,5 @@
 """
-NaraTask AI - Calendar Tool
+RutinitasKu - Calendar Tool
 Google Calendar API integration.
 """
 

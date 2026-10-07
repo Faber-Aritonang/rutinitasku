@@ -1,5 +1,5 @@
 """
-NaraTask AI - Agent Orchestrator
+RutinitasKu - Agent Orchestrator
 Main agent loop: plan → execute → respond.
 """
 

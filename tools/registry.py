@@ -1,5 +1,5 @@
 """
-NaraTask AI - Tool Registry
+RutinitasKu - Tool Registry
 Decorator-based tool registration and management.
 """
 

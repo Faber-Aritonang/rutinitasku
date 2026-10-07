@@ -1,8 +1,8 @@
-# 🤖 NaraTask AI
+# 🤖 RutinitasKu
 
 **Personal Task Automation Agent**
 
-NaraTask AI adalah asisten personal berbasis AI yang membantu mengotomasi tugas sehari-hari seperti web research, email, calendar, dan file management — semuanya melalui satu interface chat.
+RutinitasKu adalah asisten personal berbasis AI yang membantu mengotomasi tugas sehari-hari seperti web research, email, calendar, dan file management — semuanya melalui satu interface chat.
 
 ## ✨ Fitur
 

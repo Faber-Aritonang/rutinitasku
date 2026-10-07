@@ -1,5 +1,5 @@
 """
-NaraTask AI - Email Tool
+RutinitasKu - Email Tool
 IMAP/SMTP email integration.
 """
 

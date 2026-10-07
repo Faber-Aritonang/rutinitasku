@@ -1,5 +1,5 @@
 """
-NaraTask AI - Agent Module
+RutinitasKu - Agent Module
 Core agent components for task automation.
 """
 

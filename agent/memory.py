@@ -1,5 +1,5 @@
 """
-NaraTask AI - Memory Manager
+RutinitasKu - Memory Manager
 SQLite-based persistence for conversations, facts, and reminders.
 """
 

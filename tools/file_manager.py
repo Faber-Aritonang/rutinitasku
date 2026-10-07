@@ -1,5 +1,5 @@
 """
-NaraTask AI - File Manager Tool
+RutinitasKu - File Manager Tool
 Sandboxed file operations within workspace.
 """
 

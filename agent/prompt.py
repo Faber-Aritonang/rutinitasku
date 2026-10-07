@@ -1,10 +1,10 @@
 """
-NaraTask AI - System Prompts
+RutinitasKu - System Prompts
 Centralized prompt management for the agent.
 """
 
 
-SYSTEM_PROMPT = """Kamu adalah **NaraTask AI**, asisten personal berbasis AI yang membantu mengotomasi tugas sehari-hari.
+SYSTEM_PROMPT = """Kamu adalah **RutinitasKu**, asisten personal berbasis AI yang membantu mengotomasi tugas sehari-hari.
 
 ## Kemampuan Utama
 Kamu bisa membantu dengan:

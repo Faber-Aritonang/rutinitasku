@@ -1,5 +1,5 @@
 """
-NaraTask AI - Main Application
+RutinitasKu - Main Application
 Gradio-based web interface for the task automation agent.
 """
 
@@ -191,7 +191,7 @@ def create_ui():
     """Create the Gradio UI."""
 
     with gr.Blocks(
-        title="NaraTask AI",
+        title="RutinitasKu",
         theme=gr.themes.Soft(),
         css="""
         .main-header {
@@ -207,7 +207,7 @@ def create_ui():
         # Header
         gr.Markdown(
             """
-            # 🤖 NaraTask AI
+            # 🤖 RutinitasKu
             **Personal Task Automation Assistant**
 
             Saya bisa membantu Anda dengan web research, email, calendar, file management, dan lainnya.
@@ -446,7 +446,7 @@ async def main():
     # Create and launch UI
     app = create_ui()
 
-    logger.info(f"Starting NaraTask AI on {HOST}:{PORT}")
+    logger.info(f"Starting RutinitasKu on {HOST}:{PORT}")
     app.launch(
         server_name=HOST,
         server_port=PORT,

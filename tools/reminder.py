@@ -1,5 +1,5 @@
 """
-NaraTask AI - Reminder Tool
+RutinitasKu - Reminder Tool
 Time-based reminder management.
 """
 

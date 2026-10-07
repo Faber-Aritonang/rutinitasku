@@ -1,5 +1,5 @@
 """
-NaraTask AI - CSV/Excel Analyzer Tool
+RutinitasKu - CSV/Excel Analyzer Tool
 Data analysis for tabular files.
 """
 

@@ -1,5 +1,5 @@
 """
-NaraTask AI - LLM Layer
+RutinitasKu - LLM Layer
 Dual-provider abstraction with auto-fallback:
 - Primary: Anthropic Claude API
 - Fallback: NaraRouter (OpenAI-compatible)

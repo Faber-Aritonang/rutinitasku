@@ -1,5 +1,5 @@
 """
-NaraTask AI - Configuration Module
+RutinitasKu - Configuration Module
 Loads environment variables and provides app configuration.
 """
 

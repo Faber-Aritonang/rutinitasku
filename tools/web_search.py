@@ -1,5 +1,5 @@
 """
-NaraTask AI - Web Search Tool
+RutinitasKu - Web Search Tool
 DuckDuckGo-based web search integration.
 """
 

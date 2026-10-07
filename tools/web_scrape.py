@@ -1,5 +1,5 @@
 """
-NaraTask AI - Web Scraping Tool
+RutinitasKu - Web Scraping Tool
 Fetch and extract content from web pages.
 """
 
@@ -43,7 +43,7 @@ async def web_scrape(url: str, max_chars: int = 5000) -> str:
             follow_redirects=True,
             timeout=30.0,
             headers={
-                "User-Agent": "Mozilla/5.0 (compatible; NaraTaskAI/1.0)"
+                "User-Agent": "Mozilla/5.0 (compatible; RutinitasKu/1.0)"
             }
         ) as client:
             response = await client.get(url)

@@ -1,10 +1,10 @@
 # Product Requirements Document (PRD)
 
-## NaraTask AI — Personal Task Automation Agent
+## RutinitasKu — Personal Task Automation Agent
 
 | Field | Detail |
 |-------|--------|
-| **Nama Produk** | NaraTask AI |
+| **Nama Produk** | RutinitasKu |
 | **Versi Dokumen** | 1.0 |
 | **Tanggal** | 7 Oktober 2026 |
 | **Author** | Jimmy (Product Owner) |
@@ -15,7 +15,7 @@
 
 ## 1. Executive Summary
 
-**NaraTask AI** adalah sebuah personal assistant berbasis AI yang dapat mengotomasi berbagai tugas sehari-hari seperti mengelola email, menjadwalkan meeting, mencari informasi di web, dan mengelola file — semuanya melalui satu interface chat berbasis web.
+**RutinitasKu** adalah sebuah personal assistant berbasis AI yang dapat mengotomasi berbagai tugas sehari-hari seperti mengelola email, menjadwalkan meeting, mencari informasi di web, dan mengelola file — semuanya melalui satu interface chat berbasis web.
 
 Produk ini menggunakan **Anthropic Claude** sebagai LLM utama dengan **NaraRouter (Bynara)** sebagai fallback, memastikan ketersediaan layanan yang tinggi tanpa vendor lock-in ke satu provider AI.
 

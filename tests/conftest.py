@@ -1,5 +1,5 @@
 """
-Pytest configuration for NaraTask AI tests.
+Pytest configuration for RutinitasKu tests.
 """
 
 import pytest
