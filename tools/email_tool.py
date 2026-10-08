@@ -3,6 +3,7 @@ RutinitasKu - Email Tool
 IMAP/SMTP email integration.
 """
 
+import asyncio
 import imaplib
 import smtplib
 import email
@@ -115,62 +116,64 @@ async def email_read(
         return "Error: Konfigurasi email belum diatur. Set EMAIL_ADDRESS dan EMAIL_PASSWORD di .env"
 
     try:
-        # Connect to IMAP server
-        mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
-        mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        mail.select(folder)
+        def _read_emails():
+            """Synchronous email reading (runs in thread)."""
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+            mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            mail.select(folder)
 
-        # Build search criteria
-        criteria = []
-        if unread_only:
-            criteria.append("UNSEEN")
-        if search:
-            criteria.append(search)
+            # Build search criteria
+            criteria = []
+            if unread_only:
+                criteria.append("UNSEEN")
+            if search:
+                criteria.append(search)
 
-        search_str = " ".join(criteria) if criteria else "ALL"
+            search_str = " ".join(criteria) if criteria else "ALL"
 
-        # Search emails
-        status, message_ids = mail.search(None, search_str)
-
-        if status != "OK":
-            return "Error: Gagal mencari email"
-
-        ids = message_ids[0].split()
-
-        if not ids:
-            return f"Tidak ditemukan email di folder {folder}"
-
-        # Get latest emails
-        ids = ids[-limit:]
-        ids.reverse()
-
-        result = f"📧 Email dari folder '{folder}' ({len(ids)} email):\n\n"
-
-        for msg_id in ids:
-            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            # Search emails
+            status, message_ids = mail.search(None, search_str)
 
             if status != "OK":
-                continue
+                return "Error: Gagal mencari email"
 
-            msg = email.message_from_bytes(msg_data[0][1])
+            ids = message_ids[0].split()
 
-            subject = _decode_mime_header(msg["Subject"])
-            from_addr = _decode_mime_header(msg["From"])
-            date_str = msg["Date"]
+            if not ids:
+                return f"Tidak ditemukan email di folder {folder}"
 
-            # Get body preview
-            body = _get_email_body(msg)
-            body_preview = body[:200] + "..." if len(body) > 200 else body
+            # Get latest emails
+            ids = ids[-limit:]
+            ids.reverse()
 
-            result += f"{'─' * 50}\n"
-            result += f"📨 Dari: {from_addr}\n"
-            result += f"📋 Subject: {subject}\n"
-            result += f"📅 Tanggal: {date_str}\n"
-            result += f"💬 Preview: {body_preview}\n\n"
+            result = f"📧 Email dari folder '{folder}' ({len(ids)} email):\n\n"
 
-        mail.logout()
+            for msg_id in ids:
+                status, msg_data = mail.fetch(msg_id, "(RFC822)")
 
-        return result
+                if status != "OK":
+                    continue
+
+                msg = email.message_from_bytes(msg_data[0][1])
+
+                subject = _decode_mime_header(msg["Subject"])
+                from_addr = _decode_mime_header(msg["From"])
+                date_str = msg["Date"]
+
+                # Get body preview
+                body = _get_email_body(msg)
+                body_preview = body[:200] + "..." if len(body) > 200 else body
+
+                result += f"{'─' * 50}\n"
+                result += f"📨 Dari: {from_addr}\n"
+                result += f"📋 Subject: {subject}\n"
+                result += f"📅 Tanggal: {date_str}\n"
+                result += f"💬 Preview: {body_preview}\n\n"
+
+            mail.logout()
+            return result
+
+        return await asyncio.to_thread(_read_emails)
 
     except imaplib.IMAP4.error as e:
         return f"Error IMAP: {str(e)}"
@@ -226,28 +229,30 @@ async def email_send(
         return "Error: Konfigurasi email belum diatur"
 
     try:
-        # Create message
-        msg = MIMEMultipart()
-        msg["From"] = EMAIL_ADDRESS
-        msg["To"] = to
-        msg["Subject"] = subject
+        def _send_email():
+            """Synchronous email sending (runs in thread)."""
+            msg = MIMEMultipart()
+            msg["From"] = EMAIL_ADDRESS
+            msg["To"] = to
+            msg["Subject"] = subject
 
-        if cc:
-            msg["Cc"] = cc
+            if cc:
+                msg["Cc"] = cc
 
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+            msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        # Build recipient list
-        recipients = [to]
-        if cc:
-            recipients.extend([addr.strip() for addr in cc.split(",")])
+            # Build recipient list
+            recipients = [to]
+            if cc:
+                recipients.extend([addr.strip() for addr in cc.split(",")])
 
-        # Send email
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-            server.send_message(msg, EMAIL_ADDRESS, recipients)
+            # Send email
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+                server.send_message(msg, EMAIL_ADDRESS, recipients)
 
+        await asyncio.to_thread(_send_email)
         return f"Email berhasil dikirim ke {to}" + (f" (CC: {cc})" if cc else "")
 
     except smtplib.SMTPException as e:

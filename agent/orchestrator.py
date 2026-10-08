@@ -13,8 +13,10 @@ from typing import AsyncGenerator, Optional
 from .llm import LLMLayer
 from .memory import MemoryManager
 from .prompt import get_system_prompt, get_reminder_prompt
+from .planner import planner
 
 from tools.registry import registry
+from config import rate_limiter
 
 # Import all tools to register them
 import tools.web_search
@@ -24,6 +26,8 @@ import tools.csv_analyzer
 import tools.email_tool
 import tools.calendar_tool
 import tools.reminder
+import tools.pdf_reader
+import tools.planner_tool
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +88,11 @@ class AgentOrchestrator:
         start_time = time.time()
 
         try:
+            # Rate limiting check
+            if not rate_limiter.is_allowed():
+                wait_time = rate_limiter.get_wait_time()
+                return f"Maaf, Anda terlalu banyak request. Silakan tunggu {wait_time:.0f} detik."
+
             # Save user message
             await self.memory.add_message(session_id, "user", user_message)
 
@@ -98,8 +107,17 @@ class AgentOrchestrator:
             if reminder_context:
                 system_prompt += "\n\n" + reminder_context
 
+            # Inject active plan context
+            plan_context = planner.get_plan_context(session_id)
+            if plan_context:
+                system_prompt += f"\n\n{plan_context}"
+
             # Get conversation history
             messages = await self.memory.get_messages_for_llm(session_id, limit=20)
+
+            # Summarize if conversation is getting long
+            if len(messages) > 15:
+                messages = await self._summarize_if_needed(session_id, messages)
 
             # Get tool definitions
             tools = registry.get_tool_definitions()
@@ -224,6 +242,12 @@ class AgentOrchestrator:
             session_id = self.create_session()
 
         try:
+            # Rate limiting check
+            if not rate_limiter.is_allowed():
+                wait_time = rate_limiter.get_wait_time()
+                yield f"Maaf, Anda terlalu banyak request. Silakan tunggu {wait_time:.0f} detik."
+                return
+
             # Save user message
             await self.memory.add_message(session_id, "user", user_message)
 
@@ -311,9 +335,103 @@ class AgentOrchestrator:
             await self.memory.save_fact(key, value)
             return f"Fakta tersimpan: {key} = {value}"
 
+        # Handle planner tools
+        elif tool_name == "create_plan":
+            goal = arguments.get("goal", "")
+            steps = arguments.get("steps", [])
+            plan = planner.create_plan(session_id, goal, steps)
+            return f"Rencana dibuat: {goal}\n{plan.to_context()}"
+
+        elif tool_name == "update_plan_step":
+            step_id = arguments.get("step_id")
+            status = arguments.get("status")
+            result = arguments.get("result")
+
+            if status == "done":
+                planner.mark_step_done(session_id, step_id, result)
+            elif status == "failed":
+                planner.mark_step_failed(session_id, step_id, result)
+            elif status == "in_progress":
+                planner.mark_step_in_progress(session_id, step_id)
+
+            plan = planner.get_plan(session_id)
+            if plan:
+                return f"Langkah {step_id} diupdate ke {status}\n{plan.to_context()}"
+            return f"Langkah {step_id} diupdate ke {status}"
+
+        elif tool_name == "get_plan":
+            plan = planner.get_plan(session_id)
+            if plan:
+                return plan.to_context()
+            return "Tidak ada rencana aktif"
+
         # Default tool execution
         else:
             return await registry.execute(tool_name, arguments)
+
+    async def _summarize_if_needed(
+        self,
+        session_id: str,
+        messages: list[dict]
+    ) -> list[dict]:
+        """
+        Summarize old messages if conversation is too long.
+        Keeps the last 10 messages and summarizes the rest.
+
+        Args:
+            session_id: Current session ID
+            messages: Full message list
+
+        Returns:
+            Condensed message list with summary
+        """
+        if len(messages) <= 15:
+            return messages
+
+        # Split into old and recent messages
+        old_messages = messages[:-10]
+        recent_messages = messages[-10:]
+
+        # Build summary text from old messages
+        summary_parts = []
+        for msg in old_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                summary_parts.append(f"{role}: {content[:200]}")
+
+        if not summary_parts:
+            return messages
+
+        # Create summary using LLM
+        summary_prompt = (
+            "Ringkas percakapan berikut dalam 2-3 kalimat dalam Bahasa Indonesia. "
+            "Fokus pada topik utama dan kesimpulan penting:\n\n"
+            + "\n".join(summary_parts[:20])  # Limit input
+        )
+
+        try:
+            summary_response = await self.llm.chat(
+                messages=[{"role": "user", "content": summary_prompt}],
+                system="Kamu adalah asisten yang merangkum percakapan. Berikan ringkasan singkat dan padat."
+            )
+            summary_text = summary_response.content
+
+            # Build condensed messages
+            condensed = [
+                {
+                    "role": "system",
+                    "content": f"[Ringkasan percakapan sebelumnya]\n{summary_text}"
+                }
+            ]
+            condensed.extend(recent_messages)
+
+            logger.info(f"Conversation summarized: {len(messages)} -> {len(condensed)} messages")
+            return condensed
+
+        except Exception as e:
+            logger.warning(f"Summarization failed: {e}. Using full history.")
+            return messages
 
     async def _check_reminders(self) -> Optional[str]:
         """

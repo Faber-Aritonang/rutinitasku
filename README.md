@@ -13,8 +13,12 @@ RutinitasKu adalah asisten personal berbasis AI yang membantu mengotomasi tugas 
 | 📅 **Calendar** | Kelola Google Calendar (lihat, buat, hapus event) |
 | 📁 **File Management** | Kelola file dalam workspace (baca, tulis, analisis) |
 | 📊 **Data Analysis** | Analisis CSV/Excel dengan statistik deskriptif |
+| 📄 **PDF Reading** | Baca dan ekstrak teks dari file PDF |
 | ⏰ **Reminder** | Atur pengingat berbasis waktu |
+| 📋 **Task Planning** | Pecah tugas kompleks menjadi langkah-langkah kecil |
+| 💬 **Conversation Summary** | Ringkasan otomatis untuk percakapan panjang |
 | 💾 **Memory** | Ingat percakapan dan preferensi user |
+| 🔒 **Rate Limiting** | Perlindungan dari request berlebihan |
 
 ## 🛠️ Tech Stack
 
@@ -84,13 +88,17 @@ task-automation-agent/
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # Template environment variables
 ├── app.py                    # Entry point — Gradio UI
-├── config.py                 # Konfigurasi & env vars
+├── config.py                 # Konfigurasi, env vars, rate limiter
+├── Dockerfile                # Docker image definition
+├── docker-compose.yml        # Docker Compose configuration
+├── deploy.sh                 # Deployment script
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── orchestrator.py       # Agent loop utama
+│   ├── orchestrator.py       # Agent loop utama + summarization
 │   ├── llm.py                # LLM abstraction (Claude + NaraRouter)
 │   ├── memory.py             # Conversation & long-term memory
+│   ├── planner.py            # Task decomposition & planning
 │   └── prompt.py             # System prompts
 │
 ├── tools/
@@ -102,7 +110,9 @@ task-automation-agent/
 │   ├── web_scrape.py         # Web scraping
 │   ├── file_manager.py       # File operations
 │   ├── csv_analyzer.py       # CSV/Excel analysis
-│   └── reminder.py           # Reminder system
+│   ├── pdf_reader.py         # PDF reading & extraction
+│   ├── reminder.py           # Reminder system + save_fact
+│   └── planner_tool.py       # Plan management tools
 │
 ├── data/
 │   ├── memory.db             # SQLite database (auto-created)
@@ -112,7 +122,14 @@ task-automation-agent/
 └── tests/
     ├── test_llm.py
     ├── test_memory.py
-    └── test_tools.py
+    ├── test_tools.py
+    ├── test_orchestrator.py
+    ├── test_file_manager.py
+    ├── test_web_tools.py
+    ├── test_csv_analyzer.py
+    ├── test_reminder.py
+    ├── test_planner.py
+    └── test_rate_limiter.py
 ```
 
 ## ⚙️ Konfigurasi Detail
@@ -161,6 +178,35 @@ pytest tests/test_memory.py
 pytest -v
 ```
 
+## 🐳 Deployment
+
+### Docker (Recommended)
+
+```bash
+# Build dan run dengan Docker Compose
+docker-compose up -d
+
+# Atau build manual
+docker build -t rutinitasku .
+docker run -d -p 7860:7860 --name rutinitasku rutinitasku
+```
+
+### Manual Deployment
+
+```bash
+# Jalankan script deploy
+./deploy.sh
+```
+
+### Environment Variables untuk Production
+
+```env
+# Set di .env
+DEBUG=false
+HOST=0.0.0.0
+PORT=7860
+```
+
 ## 📝 Contoh Penggunaan
 
 ### Web Research
@@ -191,6 +237,21 @@ Agent: [membaca CSV dan menampilkan statistik]
 ```
 User: Ingatkan saya jam 3 sore untuk follow up klien
 Agent: Reminder diatur untuk jam 15:00
+```
+
+### PDF Reading
+```
+User: Baca halaman 1-3 dari dokumen laporan.pdf
+Agent: [mengekstrak teks dari PDF dan menampilkannya]
+```
+
+### Task Planning
+```
+User: Buat rencana untuk riset kompetitor
+Agent: [membuat rencana dengan langkah-langkah:
+  1. Cari informasi kompetitor di web
+  2. Analisis kekuatan dan kelemahan
+  3. Buat laporan perbandingan]
 ```
 
 ## 🔧 Troubleshooting

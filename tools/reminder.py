@@ -10,6 +10,39 @@ from .registry import registry
 
 
 @registry.tool(
+    name="save_fact",
+    description="Simpan fakta atau preferensi user untuk personalisasi. Contoh: nama, bahasa, topik favorit.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "Nama fakta (contoh: 'nama', 'bahasa', 'kota')"
+            },
+            "value": {
+                "type": "string",
+                "description": "Nilai fakta (contoh: 'Jimmy', 'Indonesia', 'Jakarta')"
+            }
+        },
+        "required": ["key", "value"]
+    }
+)
+async def save_fact(key: str, value: str) -> str:
+    """
+    Save a user fact or preference.
+
+    Args:
+        key: Fact key
+        value: Fact value
+
+    Returns:
+        Confirmation message
+    """
+    # This is handled by the orchestrator directly
+    return f"SAVE_FACT|{key}|{value}"
+
+
+@registry.tool(
     name="set_reminder",
     description="Atur pengingat baru. Bisa berdasarkan waktu spesifik atau durasi.",
     input_schema={

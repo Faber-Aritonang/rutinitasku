@@ -3,6 +3,7 @@ RutinitasKu - Calendar Tool
 Google Calendar API integration.
 """
 
+import asyncio
 import os
 from datetime import datetime, timedelta
 from typing import Optional
@@ -18,6 +19,9 @@ from .registry import registry
 
 # Scopes required for Google Calendar
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# Default timezone (configurable)
+DEFAULT_TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "Asia/Jakarta")
 
 
 def get_calendar_service():
@@ -104,75 +108,79 @@ async def calendar_list_events(
         Formatted event list
     """
     try:
-        service = get_calendar_service()
+        def _list_events():
+            """Synchronous calendar list (runs in thread)."""
+            service = get_calendar_service()
 
-        # Parse time filters
-        now = datetime.utcnow()
+            # Parse time filters
+            now = datetime.utcnow()
 
-        if time_min:
-            if time_min.lower() == "today":
-                time_min = now.replace(hour=0, minute=0, second=0).isoformat() + "Z"
-            elif time_min.lower() == "tomorrow":
-                tomorrow = now + timedelta(days=1)
-                time_min = tomorrow.replace(hour=0, minute=0, second=0).isoformat() + "Z"
-            elif time_min.lower() == "week":
-                time_min = now.isoformat() + "Z"
-                time_max = (now + timedelta(days=7)).isoformat() + "Z"
-            else:
-                time_min = datetime.strptime(time_min, "%Y-%m-%d").isoformat() + "Z"
-        else:
-            time_min = now.isoformat() + "Z"
-
-        if time_max and "Z" not in time_max:
-            time_max = datetime.strptime(time_max, "%Y-%m-%d").isoformat() + "Z"
-
-        # Call Google Calendar API
-        events_result = service.events().list(
-            calendarId=calendar_id,
-            timeMin=time_min,
-            timeMax=time_max,
-            maxResults=max_results,
-            singleEvents=True,
-            orderBy="startTime"
-        ).execute()
-
-        events = events_result.get("items", [])
-
-        if not events:
-            return "Tidak ada event ditemukan"
-
-        result = f"📅 Event Calendar ({len(events)} event):\n\n"
-
-        for event in events:
-            start = event["start"].get("dateTime", event["start"].get("date"))
-            end = event["end"].get("dateTime", event["end"].get("date"))
-
-            # Parse datetime
-            try:
-                start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
-
-                if "T" in start:
-                    time_str = f"{start_dt.strftime('%d %b %Y, %H:%M')} - {end_dt.strftime('%H:%M')}"
+            if time_min:
+                if time_min.lower() == "today":
+                    time_min = now.replace(hour=0, minute=0, second=0).isoformat() + "Z"
+                elif time_min.lower() == "tomorrow":
+                    tomorrow = now + timedelta(days=1)
+                    time_min = tomorrow.replace(hour=0, minute=0, second=0).isoformat() + "Z"
+                elif time_min.lower() == "week":
+                    time_min = now.isoformat() + "Z"
+                    time_max = (now + timedelta(days=7)).isoformat() + "Z"
                 else:
-                    time_str = f"{start_dt.strftime('%d %b %Y')} (All day)"
-            except:
-                time_str = start
+                    time_min = datetime.strptime(time_min, "%Y-%m-%d").isoformat() + "Z"
+            else:
+                time_min = now.isoformat() + "Z"
 
-            summary = event.get("summary", "(Tanpa judul)")
-            location = event.get("location", "")
-            description = event.get("description", "")
+            if time_max and "Z" not in time_max:
+                time_max = datetime.strptime(time_max, "%Y-%m-%d").isoformat() + "Z"
 
-            result += f"📌 {summary}\n"
-            result += f"   ⏰ {time_str}\n"
-            if location:
-                result += f"   📍 {location}\n"
-            if description:
-                desc_preview = description[:100] + "..." if len(description) > 100 else description
-                result += f"   📝 {desc_preview}\n"
-            result += "\n"
+            # Call Google Calendar API
+            events_result = service.events().list(
+                calendarId=calendar_id,
+                timeMin=time_min,
+                timeMax=time_max,
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy="startTime"
+            ).execute()
 
-        return result
+            events = events_result.get("items", [])
+
+            if not events:
+                return "Tidak ada event ditemukan"
+
+            result = f"📅 Event Calendar ({len(events)} event):\n\n"
+
+            for event in events:
+                start = event["start"].get("dateTime", event["start"].get("date"))
+                end = event["end"].get("dateTime", event["end"].get("date"))
+
+                # Parse datetime
+                try:
+                    start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                    end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+
+                    if "T" in start:
+                        time_str = f"{start_dt.strftime('%d %b %Y, %H:%M')} - {end_dt.strftime('%H:%M')}"
+                    else:
+                        time_str = f"{start_dt.strftime('%d %b %Y')} (All day)"
+                except:
+                    time_str = start
+
+                summary = event.get("summary", "(Tanpa judul)")
+                location = event.get("location", "")
+                description = event.get("description", "")
+
+                result += f"📌 {summary}\n"
+                result += f"   ⏰ {time_str}\n"
+                if location:
+                    result += f"   📍 {location}\n"
+                if description:
+                    desc_preview = description[:100] + "..." if len(description) > 100 else description
+                    result += f"   📝 {desc_preview}\n"
+                result += "\n"
+
+            return result
+
+        return await asyncio.to_thread(_list_events)
 
     except FileNotFoundError as e:
         return f"Error: {str(e)}"
@@ -245,44 +253,48 @@ async def calendar_create_event(
         Creation result
     """
     try:
-        service = get_calendar_service()
+        def _create_event():
+            """Synchronous event creation (runs in thread)."""
+            service = get_calendar_service()
 
-        # Parse times
-        if all_day:
-            start_dt = datetime.strptime(start_time, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_time, "%Y-%m-%d")
-            start = {"date": start_dt.strftime("%Y-%m-%d")}
-            end = {"date": end_dt.strftime("%Y-%m-%d")}
-        else:
-            start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M")
-            end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M")
-            start = {"dateTime": start_dt.isoformat(), "timeZone": "Asia/Jakarta"}
-            end = {"dateTime": end_dt.isoformat(), "timeZone": "Asia/Jakarta"}
+            # Parse times
+            if all_day:
+                start_dt = datetime.strptime(start_time, "%Y-%m-%d")
+                end_dt = datetime.strptime(end_time, "%Y-%m-%d")
+                start = {"date": start_dt.strftime("%Y-%m-%d")}
+                end = {"date": end_dt.strftime("%Y-%m-%d")}
+            else:
+                start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M")
+                end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M")
+                start = {"dateTime": start_dt.isoformat(), "timeZone": DEFAULT_TIMEZONE}
+                end = {"dateTime": end_dt.isoformat(), "timeZone": DEFAULT_TIMEZONE}
 
-        # Build event body
-        event_body = {
-            "summary": summary,
-            "start": start,
-            "end": end
-        }
+            # Build event body
+            event_body = {
+                "summary": summary,
+                "start": start,
+                "end": end
+            }
 
-        if description:
-            event_body["description"] = description
-        if location:
-            event_body["location"] = location
+            if description:
+                event_body["description"] = description
+            if location:
+                event_body["location"] = location
 
-        # Create event
-        event = service.events().insert(
-            calendarId=calendar_id,
-            body=event_body
-        ).execute()
+            # Create event
+            event = service.events().insert(
+                calendarId=calendar_id,
+                body=event_body
+            ).execute()
 
-        return (
-            f"Event berhasil dibuat!\n\n"
-            f"📌 {summary}\n"
-            f"⏰ {start_time} - {end_time}\n"
-            f"🔗 {event.get('htmlLink', '')}"
-        )
+            return (
+                f"Event berhasil dibuat!\n\n"
+                f"📌 {summary}\n"
+                f"⏰ {start_time} - {end_time}\n"
+                f"🔗 {event.get('htmlLink', '')}"
+            )
+
+        return await asyncio.to_thread(_create_event)
 
     except FileNotFoundError as e:
         return f"Error: {str(e)}"
@@ -326,13 +338,15 @@ async def calendar_delete_event(
         Deletion result
     """
     try:
-        service = get_calendar_service()
+        def _delete_event():
+            """Synchronous event deletion (runs in thread)."""
+            service = get_calendar_service()
+            service.events().delete(
+                calendarId=calendar_id,
+                eventId=event_id
+            ).execute()
 
-        service.events().delete(
-            calendarId=calendar_id,
-            eventId=event_id
-        ).execute()
-
+        await asyncio.to_thread(_delete_event)
         return f"Event berhasil dihapus (ID: {event_id})"
 
     except Exception as e:
