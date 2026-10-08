@@ -191,14 +191,7 @@ def create_ui():
     """Create the Gradio UI."""
 
     with gr.Blocks(
-        title="RutinitasKu",
-        theme=gr.themes.Soft(),
-        css="""
-        .main-header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        """
+        title="RutinitasKu"
     ) as app:
 
         # State
@@ -220,9 +213,7 @@ def create_ui():
             with gr.Tab("💬 Chat", id="chat"):
                 chatbot = gr.Chatbot(
                     label="Percakapan",
-                    height=500,
-                    show_copy_button=True,
-                    type="messages"
+                    height=500
                 )
 
                 with gr.Row():
@@ -375,7 +366,7 @@ def create_ui():
         )
 
         # File upload
-        upload_file.change(
+        file_upload.change(
             fn=upload_file,
             inputs=[file_upload],
             outputs=[upload_status]
@@ -451,7 +442,13 @@ async def main():
         server_name=HOST,
         server_port=PORT,
         share=False,
-        show_api=False
+        theme=gr.themes.Soft(),
+        css="""
+        .main-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        """
     )
 
 
