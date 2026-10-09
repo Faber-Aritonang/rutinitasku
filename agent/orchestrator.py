@@ -54,6 +54,7 @@ class AgentOrchestrator:
     async def close(self):
         """Cleanup resources."""
         await self.memory.close()
+        await self.llm.close()
 
     def create_session(self) -> str:
         """Create a new conversation session."""

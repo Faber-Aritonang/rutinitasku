@@ -26,6 +26,19 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
+def _create_llm_http_client():
+    """Create an SDK HTTP client without advertising unsupported Brotli."""
+    try:
+        # Newer SDK releases use httpx2; older releases still use httpx.
+        import httpx2 as http_client_library
+    except ImportError:
+        import httpx as http_client_library
+
+    return http_client_library.AsyncClient(
+        headers={"Accept-Encoding": "gzip, deflate"}
+    )
+
+
 @dataclass
 class LLMResponse:
     """Response from LLM with metadata."""
@@ -45,19 +58,34 @@ class LLMLayer:
     def __init__(self):
         self.claude_client = None
         self.nararouter_client = None
+        self._http_clients = []
 
         # Initialize Claude client
         if ANTHROPIC_API_KEY:
-            self.claude_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+            http_client = _create_llm_http_client()
+            self._http_clients.append(http_client)
+            self.claude_client = anthropic.AsyncAnthropic(
+                api_key=ANTHROPIC_API_KEY,
+                http_client=http_client
+            )
             logger.info(f"Claude client initialized with model: {ANTHROPIC_MODEL}")
 
         # Initialize NaraRouter client
         if NARAROUTER_API_KEY:
+            http_client = _create_llm_http_client()
+            self._http_clients.append(http_client)
             self.nararouter_client = AsyncOpenAI(
                 api_key=NARAROUTER_API_KEY,
-                base_url=NARAROUTER_BASE_URL
+                base_url=NARAROUTER_BASE_URL,
+                http_client=http_client
             )
             logger.info(f"NaraRouter client initialized with model: {NARAROUTER_MODEL}")
+
+    async def close(self):
+        """Close the HTTP clients used by configured LLM providers."""
+        for http_client in self._http_clients:
+            await http_client.aclose()
+        self._http_clients.clear()
 
     async def chat(
         self,
@@ -137,7 +165,6 @@ class LLMLayer:
             "model": ANTHROPIC_MODEL,
             "max_tokens": MAX_TOKENS,
             "messages": messages,
-            "temperature": TEMPERATURE
         }
 
         if system:
@@ -236,7 +263,6 @@ class LLMLayer:
             "model": ANTHROPIC_MODEL,
             "max_tokens": MAX_TOKENS,
             "messages": messages,
-            "temperature": TEMPERATURE
         }
 
         if system:

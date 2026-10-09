@@ -40,6 +40,31 @@ def test_is_available(llm_layer):
     assert "nararouter" in status
 
 
+def test_llm_clients_disable_brotli_encoding():
+    """Avoid the system Brotli decoder API mismatch in SDK requests."""
+    with patch("agent.llm.ANTHROPIC_API_KEY", "test-key"), \
+         patch("agent.llm.NARAROUTER_API_KEY", "test-key"):
+        layer = LLMLayer()
+
+    assert layer.claude_client._client.headers["accept-encoding"] == "gzip, deflate"
+    assert layer.nararouter_client._client.headers["accept-encoding"] == "gzip, deflate"
+
+
+@pytest.mark.asyncio
+async def test_call_claude_does_not_send_unsupported_temperature(llm_layer):
+    """Anthropic Messages API does not accept the temperature parameter."""
+    mock_response = MagicMock(
+        content=[],
+        usage=MagicMock(input_tokens=1, output_tokens=1)
+    )
+    llm_layer.claude_client.messages.create = AsyncMock(return_value=mock_response)
+
+    await llm_layer._call_claude([{"role": "user", "content": "Halo"}], None, None)
+
+    request_kwargs = llm_layer.claude_client.messages.create.await_args.kwargs
+    assert "temperature" not in request_kwargs
+
+
 def test_convert_tools_to_openai(llm_layer):
     """Test tool format conversion."""
     anthropic_tools = [
