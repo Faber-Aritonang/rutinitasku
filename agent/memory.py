@@ -115,7 +115,7 @@ class MemoryManager:
             """SELECT role, content, tool_calls, tool_results, created_at
                FROM messages
                WHERE session_id = ?
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT ?""",
             (session_id, limit)
         )
@@ -141,27 +141,55 @@ class MemoryManager:
         session_id: str,
         limit: int = 20
     ) -> list[dict]:
-        """Get messages formatted for LLM API."""
+        """
+        Get conversation history formatted for the LLM API.
+
+        Messages are emitted in Anthropic-native form: an assistant turn that
+        requested tools becomes text + ``tool_use`` content blocks, and the
+        matching ``tool_results`` row becomes a user turn with ``tool_result``
+        blocks. The LLM layer converts this to OpenAI format for NaraRouter.
+        """
         messages = await self.get_messages(session_id, limit)
 
         llm_messages = []
         for msg in messages:
-            llm_msg = {"role": msg["role"], "content": msg["content"]}
+            role = msg["role"]
 
-            # Add tool calls if present
-            if "tool_calls" in msg and msg["tool_calls"]:
-                llm_msg["tool_calls"] = msg["tool_calls"]
+            # Tool results are delivered back as tool_result content blocks.
+            if msg.get("tool_results"):
+                llm_messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": result["tool_call_id"],
+                            "content": result["content"],
+                        }
+                        for result in msg["tool_results"]
+                    ],
+                })
+                continue
 
-            # Add tool results if present
-            if "tool_results" in msg and msg["tool_results"]:
-                for result in msg["tool_results"]:
-                    llm_messages.append({
-                        "role": "tool",
-                        "tool_call_id": result["tool_call_id"],
-                        "content": result["content"]
+            # Assistant turns that requested tools keep their tool_use blocks.
+            if role == "assistant" and msg.get("tool_calls"):
+                content_blocks = []
+                if msg["content"]:
+                    content_blocks.append({"type": "text", "text": msg["content"]})
+                for tool_call in msg["tool_calls"]:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tool_call["id"],
+                        "name": tool_call["name"],
+                        "input": tool_call.get("arguments") or {},
                     })
+                llm_messages.append({"role": "assistant", "content": content_blocks})
+                continue
 
-            llm_messages.append(llm_msg)
+            if role not in ("user", "assistant"):
+                # Skip rows that are not valid chat turns (e.g. legacy data).
+                continue
+
+            llm_messages.append({"role": role, "content": msg["content"]})
 
         return llm_messages
 

@@ -164,7 +164,7 @@ class AgentOrchestrator:
                             "content": f"Error: {str(e)}"
                         })
 
-                # Add assistant message with tool calls to conversation
+                # Persist the assistant turn that requested the tools
                 await self.memory.add_message(
                     session_id,
                     "assistant",
@@ -172,24 +172,30 @@ class AgentOrchestrator:
                     tool_calls=response.tool_calls
                 )
 
-                # Add tool results to conversation
-                for result in tool_results:
-                    await self.memory.add_message(
-                        session_id,
-                        "tool",
-                        result["content"]
-                    )
+                # Persist every tool result as a single turn
+                await self.memory.add_message(
+                    session_id,
+                    "tool",
+                    "",
+                    tool_results=tool_results
+                )
 
-                # Update messages for next iteration
-                messages = await self.memory.get_messages_for_llm(session_id, limit=20)
-
-                # Add tool results to messages for LLM
-                for result in tool_results:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": result["tool_call_id"],
-                        "content": result["content"]
-                    })
+                # Continue the conversation in Anthropic-native format so the
+                # model can see the tool output on the next iteration.
+                messages.append(
+                    self._build_assistant_tool_message(response_content, response.tool_calls)
+                )
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": result["tool_call_id"],
+                            "content": result["content"],
+                        }
+                        for result in tool_results
+                    ],
+                })
 
             # Save assistant response
             await self.memory.add_message(session_id, "assistant", response_content)
@@ -229,7 +235,11 @@ class AgentOrchestrator:
         session_id: str = None
     ) -> AsyncGenerator[str, None]:
         """
-        Stream chat response.
+        Stream chat response, executing tools when the model asks for them.
+
+        Text is yielded token-by-token. When the model requests a tool, the
+        tool runs, its result is fed back to the model, and generation resumes
+        until the model produces a final answer (or the iteration cap is hit).
 
         Args:
             user_message: User's message
@@ -261,20 +271,84 @@ class AgentOrchestrator:
             if reminder_context:
                 system_prompt += "\n\n" + reminder_context
 
-            # Get conversation history
-            messages = await self.memory.get_messages_for_llm(session_id, limit=20)
+            # Inject active plan context
+            plan_context = planner.get_plan_context(session_id)
+            if plan_context:
+                system_prompt += f"\n\n{plan_context}"
 
-            # Get tools
+            # Get conversation history and tools
+            messages = await self.memory.get_messages_for_llm(session_id, limit=20)
+            if len(messages) > 15:
+                messages = await self._summarize_if_needed(session_id, messages)
+
             tools = registry.get_tool_definitions()
 
-            # Stream response
-            full_response = ""
-            async for chunk in self.llm.chat_stream(messages, tools, system_prompt):
-                full_response += chunk
-                yield chunk
+            # Agent loop - keep going while the model requests tools
+            max_iterations = 5
+            for _ in range(max_iterations):
+                turn_text = ""
+                tool_calls = []
 
-            # Save response
-            await self.memory.add_message(session_id, "assistant", full_response)
+                async for event in self.llm.chat_stream(messages, tools, system_prompt):
+                    if event["type"] == "text":
+                        turn_text += event["text"]
+                        yield event["text"]
+                    elif event["type"] == "tool_calls":
+                        tool_calls = event["tool_calls"]
+
+                # No tools requested: this was the final answer.
+                if not tool_calls:
+                    if turn_text:
+                        await self.memory.add_message(session_id, "assistant", turn_text)
+                    break
+
+                # Persist and replay the assistant turn that requested tools.
+                await self.memory.add_message(
+                    session_id,
+                    "assistant",
+                    turn_text,
+                    tool_calls=tool_calls
+                )
+                messages.append(self._build_assistant_tool_message(turn_text, tool_calls))
+
+                # Execute every requested tool and collect the results.
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call.get("arguments") or {}
+                    tool_call_id = tool_call["id"]
+
+                    logger.info(f"Executing tool (stream): {tool_name}")
+                    yield f"\n\n🔧 _{tool_name}_\n\n"
+
+                    try:
+                        result = await self._execute_tool(tool_name, tool_args, session_id)
+                    except Exception as e:
+                        logger.error(f"Tool execution failed: {e}")
+                        result = f"Error: {str(e)}"
+
+                    tool_results.append({
+                        "tool_call_id": tool_call_id,
+                        "content": str(result)
+                    })
+
+                await self.memory.add_message(
+                    session_id,
+                    "tool",
+                    "",
+                    tool_results=tool_results
+                )
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": result["tool_call_id"],
+                            "content": result["content"],
+                        }
+                        for result in tool_results
+                    ],
+                })
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
@@ -370,6 +444,33 @@ class AgentOrchestrator:
         else:
             return await registry.execute(tool_name, arguments)
 
+    @staticmethod
+    def _build_assistant_tool_message(text: str, tool_calls: list[dict]) -> dict:
+        """Build an Anthropic-native assistant turn carrying tool_use blocks."""
+        content_blocks = []
+        if text:
+            content_blocks.append({"type": "text", "text": text})
+        for tool_call in tool_calls:
+            content_blocks.append({
+                "type": "tool_use",
+                "id": tool_call["id"],
+                "name": tool_call["name"],
+                "input": tool_call.get("arguments") or {},
+            })
+        return {"role": "assistant", "content": content_blocks}
+
+    @staticmethod
+    def _message_text(content) -> str:
+        """Extract plain text from a message content string or block list."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(
+                block.get("text", "") for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+        return ""
+
     async def _summarize_if_needed(
         self,
         session_id: str,
@@ -397,7 +498,7 @@ class AgentOrchestrator:
         summary_parts = []
         for msg in old_messages:
             role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            content = self._message_text(msg.get("content", ""))
             if role in ("user", "assistant") and content:
                 summary_parts.append(f"{role}: {content[:200]}")
 
@@ -418,10 +519,12 @@ class AgentOrchestrator:
             )
             summary_text = summary_response.content
 
-            # Build condensed messages
+            # Build condensed messages. The summary is injected as a user
+            # turn because the Anthropic Messages API only accepts user and
+            # assistant roles inside the messages array.
             condensed = [
                 {
-                    "role": "system",
+                    "role": "user",
                     "content": f"[Ringkasan percakapan sebelumnya]\n{summary_text}"
                 }
             ]

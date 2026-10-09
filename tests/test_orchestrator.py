@@ -202,3 +202,58 @@ async def test_get_task_stats(orchestrator):
 
     assert "chat" in stats
     assert stats["chat"]["total"] == 10
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_executes_tools_and_streams_final_answer(orchestrator):
+    """Streaming chat must run tool calls instead of dropping them."""
+    orch, mock_memory, mock_llm = orchestrator
+
+    async def first_turn(messages, tools, system):
+        yield {"type": "text", "text": "Saya akan membaca email Anda."}
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [
+                {"id": "call_1", "name": "email_read", "arguments": {"limit": 6}}
+            ],
+        }
+
+    async def second_turn(messages, tools, system):
+        yield {"type": "text", "text": "Berikut ringkasan 6 email teratas."}
+
+    turns = [first_turn, second_turn]
+    seen_messages = []
+
+    def chat_stream(messages, tools, system):
+        seen_messages.append(messages)
+        return turns.pop(0)(messages, tools, system)
+
+    mock_llm.chat_stream = chat_stream
+    orch._execute_tool = AsyncMock(return_value="📧 Email 1 ... Email 6")
+
+    with patch("agent.orchestrator.rate_limiter.is_allowed", return_value=True):
+        chunks = [
+            chunk async for chunk in orch.chat_stream(
+                "Ringkas 6 email teratas", session_id="test-session"
+            )
+        ]
+
+    output = "".join(chunks)
+    assert "Saya akan membaca email Anda." in output
+    assert "Berikut ringkasan 6 email teratas." in output
+
+    orch._execute_tool.assert_awaited_once_with("email_read", {"limit": 6}, "test-session")
+
+    # The tool output is fed back to the model on the next iteration.
+    second_call_messages = seen_messages[1]
+    tool_result_msg = second_call_messages[-1]
+    assert tool_result_msg["role"] == "user"
+    assert tool_result_msg["content"][0]["type"] == "tool_result"
+    assert tool_result_msg["content"][0]["tool_use_id"] == "call_1"
+    assert tool_result_msg["content"][0]["content"] == "📧 Email 1 ... Email 6"
+
+    # Both the assistant tool turn and the tool results are persisted.
+    calls = mock_memory.add_message.await_args_list
+    assistant_tool_call = next(c for c in calls if c.kwargs.get("tool_calls"))
+    assert assistant_tool_call.kwargs["tool_calls"][0]["name"] == "email_read"
+    assert any(c.kwargs.get("tool_results") for c in calls)

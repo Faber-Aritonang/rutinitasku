@@ -91,3 +91,46 @@ async def test_clear_session(memory):
 
     messages = await memory.get_messages(session_id)
     assert len(messages) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_messages_for_llm_builds_tool_blocks(memory):
+    """Persisted tool calls/results are reconstructed as Anthropic blocks."""
+    session_id = "test-session-tools"
+
+    await memory.add_message(session_id, "user", "Ringkas 6 email teratas")
+    await memory.add_message(
+        session_id,
+        "assistant",
+        "Saya akan membaca email Anda.",
+        tool_calls=[
+            {"id": "call_1", "name": "email_read", "arguments": {"limit": 6}}
+        ],
+    )
+    await memory.add_message(
+        session_id,
+        "tool",
+        "",
+        tool_results=[{"tool_call_id": "call_1", "content": "EMAILS"}],
+    )
+
+    messages = await memory.get_messages_for_llm(session_id)
+
+    assistant_msg = next(m for m in messages if m["role"] == "assistant")
+    assert assistant_msg["content"][0] == {
+        "type": "text",
+        "text": "Saya akan membaca email Anda.",
+    }
+    assert assistant_msg["content"][1] == {
+        "type": "tool_use",
+        "id": "call_1",
+        "name": "email_read",
+        "input": {"limit": 6},
+    }
+
+    tool_msg = next(
+        m for m in messages if m["role"] == "user" and isinstance(m["content"], list)
+    )
+    assert tool_msg["content"] == [
+        {"type": "tool_result", "tool_use_id": "call_1", "content": "EMAILS"}
+    ]

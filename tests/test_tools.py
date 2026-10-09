@@ -73,3 +73,25 @@ async def test_execute_nonexistent_tool(registry):
     """Test executing non-existent tool."""
     with pytest.raises(ValueError, match="not found"):
         await registry.execute("nonexistent", {})
+
+def test_email_search_criteria_single_day():
+    """Satu hari penuh: SINCE hari itu, BEFORE hari berikutnya."""
+    from tools.email_tool import _build_search_criteria
+
+    assert _build_search_criteria(since="2026-10-08", before="2026-10-09") == (
+        "SINCE 08-Oct-2026 BEFORE 09-Oct-2026"
+    )
+
+
+def test_email_search_criteria_defaults_and_combination():
+    from tools.email_tool import _build_search_criteria
+
+    assert _build_search_criteria() == "ALL"
+    assert _build_search_criteria(unread_only=True, search="FROM john") == "UNSEEN FROM john"
+
+
+def test_email_search_criteria_rejects_bad_date():
+    from tools.email_tool import _build_search_criteria
+
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        _build_search_criteria(since="8 Oktober")

@@ -65,6 +65,37 @@ def _get_email_body(msg):
     return "[Tidak dapat membaca isi email]"
 
 
+def _parse_date(value: str, field: str) -> str:
+    """Convert YYYY-MM-DD into the IMAP date format (e.g. 08-Oct-2026)."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d-%b-%Y")
+    except ValueError:
+        raise ValueError(f"Format tanggal '{field}' harus YYYY-MM-DD, bukan '{value}'")
+
+
+def _build_search_criteria(
+    unread_only: bool = False,
+    search: str = None,
+    since: str = None,
+    before: str = None,
+) -> str:
+    """Build an IMAP SEARCH string from the tool arguments."""
+    criteria = []
+    if unread_only:
+        criteria.append("UNSEEN")
+    if since:
+        criteria.append(f"SINCE {_parse_date(since, 'since')}")
+    if before:
+        criteria.append(f"BEFORE {_parse_date(before, 'before')}")
+    if search:
+        criteria.append(search)
+
+    return " ".join(criteria) if criteria else "ALL"
+
+
+MAX_EMAIL_LIMIT = 20
+
+
 @registry.tool(
     name="email_read",
     description="Baca email terbaru dari inbox. Bisa filter berdasarkan sender, subject, atau jumlah.",
@@ -78,8 +109,16 @@ def _get_email_body(msg):
             },
             "limit": {
                 "type": "integer",
-                "description": "Jumlah email yang dibaca (default: 10)",
+                "description": "Jumlah email yang dibaca, 1-20 (default: 10)",
                 "default": 10
+            },
+            "since": {
+                "type": "string",
+                "description": "Email pada atau sesudah tanggal ini, format YYYY-MM-DD (contoh: 2026-10-08)"
+            },
+            "before": {
+                "type": "string",
+                "description": "Email sebelum tanggal ini (tidak termasuk), format YYYY-MM-DD. Untuk satu hari penuh, isi since=tanggal dan before=tanggal berikutnya"
             },
             "search": {
                 "type": "string",
@@ -98,16 +137,20 @@ async def email_read(
     folder: str = "INBOX",
     limit: int = 10,
     search: str = None,
-    unread_only: bool = False
+    unread_only: bool = False,
+    since: str = None,
+    before: str = None,
 ) -> str:
     """
     Read emails from mailbox.
 
     Args:
         folder: Email folder
-        limit: Number of emails to read
+        limit: Number of emails to read (1-20)
         search: Search filter
         unread_only: Only unread emails
+        since: Only emails on or after this date (YYYY-MM-DD)
+        before: Only emails before this date (YYYY-MM-DD, exclusive)
 
     Returns:
         Formatted email list
@@ -116,20 +159,18 @@ async def email_read(
         return "Error: Konfigurasi email belum diatur. Set EMAIL_ADDRESS dan EMAIL_PASSWORD di .env"
 
     try:
+        search_str = _build_search_criteria(unread_only, search, since, before)
+    except ValueError as e:
+        return f"Error: {e}"
+
+    limit = max(1, min(int(limit or 10), MAX_EMAIL_LIMIT))
+
+    try:
         def _read_emails():
             """Synchronous email reading (runs in thread)."""
             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
             mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             mail.select(folder)
-
-            # Build search criteria
-            criteria = []
-            if unread_only:
-                criteria.append("UNSEEN")
-            if search:
-                criteria.append(search)
-
-            search_str = " ".join(criteria) if criteria else "ALL"
 
             # Search emails
             status, message_ids = mail.search(None, search_str)

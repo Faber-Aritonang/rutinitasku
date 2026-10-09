@@ -3,6 +3,8 @@ RutinitasKu - System Prompts
 Centralized prompt management for the agent.
 """
 
+from datetime import date
+
 
 SYSTEM_PROMPT = """Kamu adalah **RutinitasKu**, asisten personal berbasis AI yang membantu mengotomasi tugas sehari-hari.
 
@@ -83,7 +85,8 @@ def get_system_prompt(facts: dict = None) -> str:
     Returns:
         Complete system prompt
     """
-    prompt = SYSTEM_PROMPT
+    prompt = SYSTEM_PROMPT + "\n\n" + TOOL_USAGE_PROMPT
+    prompt += f"\n\nTanggal hari ini: {date.today().isoformat()} (gunakan untuk menerjemahkan istilah tanggal seperti 'kemarin' atau '8 Oktober' ke format YYYY-MM-DD)"
 
     if facts:
         facts_text = "\n".join([f"- {k}: {v}" for k, v in facts.items()])
